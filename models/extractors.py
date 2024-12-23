@@ -15,8 +15,9 @@ def build_extractor_single_branch(c):
         # llw pretrained->False, use random init
         extractor = wide_resnet50_2(pretrained=True, progress=True)
     elif c.extractor == 'wide_resnet50_2_single_branch':
-        # llw pretrained->False, use random init
         extractor = wide_resnet50_2_single_branch(pretrained=True, progress=True)
+    elif c.extractor == 'deit_base_distilled_patch16_384':
+        extractor = deit_base_distilled_patch16_384(pretrained=True)
 
     output_channels = []
     if 'wide' in c.extractor:

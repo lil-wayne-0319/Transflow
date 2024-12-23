@@ -30,7 +30,8 @@ img_mean, img_std = [0.485, 0.456, 0.406], [0.229, 0.224, 0.225]
 
 # model
 # extractor = 'wide_resnet50_2' # [resnet18, resnet34, resnet50, resnext50_32x4d, wide_resnet50_2]
-extractor = 'wide_resnet50_2_single_branch' # [resnet18, resnet34, resnet50, resnext50_32x4d, wide_resnet50_2]
+extractor = 'wide_resnet50_2_single_branch'  # [resnet18, resnet34, resnet50, resnext50_32x4d, wide_resnet50_2]
+                                             # [deit_base_distilled_patch16_384, cait_m48_448]
 pool_type = 'avg'
 c_conds = [64, 64, 64]
 parallel_blocks = [2, 5, 8]

@@ -11,7 +11,7 @@ from torch.cuda.amp import autocast, GradScaler
 
 from datasets import MVTecDataset, VisADataset, MIADDataset
 from models.extractors import build_extractor
-from models.flow_models import build_msflow_model
+from models.flow_models import build_msflow_model, build_trflow_model
 from post_process import post_process
 from utils import Score_Observer, t2np, positionalencoding2d, save_weights, load_weights
 from evaluations import eval_det_loc
@@ -48,8 +48,7 @@ def model_forward(c, extractor, parallel_flows, fusion_flow, image):
     return z_list, jac
 
 
-def train_meta_epoch(c, epoch, loader, extractor, parallel_flows, fusion_flow, params, optimizer, warmup_scheduler,
-                     decay_scheduler, scaler=None):
+def train_meta_epoch(c, epoch, loader, extractor, parallel_flows, fusion_flow, params, optimizer, warmup_scheduler, decay_scheduler, scaler=None):
     parallel_flows = [parallel_flow.train() for parallel_flow in parallel_flows]
     fusion_flow = fusion_flow.train()
 
@@ -165,13 +164,12 @@ def train_mae(c):
     random_indices = torch.randperm(len(test_dataset))[:N_sample]  # 从索引列表中随机选择 N 个索引
     sampler = SubsetRandomSampler(random_indices)  # 创建一个子集采样器，使用随机选择的索引
     # 创建 DataLoader，使用采样器来限制读取的样本数
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=c.batch_size, sampler=sampler, shuffle=False,
-                                              num_workers=c.workers, pin_memory=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=c.batch_size, sampler=sampler, shuffle=False, num_workers=c.workers, pin_memory=False)
 
     extractor, output_channels = build_extractor(c)
     extractor = extractor.to(c.device).eval()
     if 'mae' in c.extractor:
-        trans_flows = build_translow_model(c, output_channels)
+        trans_flows = build_trflow_model(c, output_channels)
         trans_flows = trans_flows.to(c.device)
         params = list(trans_flows.parameters())
 
@@ -199,15 +197,10 @@ def train_mae(c):
     if c.mode == 'test':
         start_epoch = load_weights(parallel_flows, fusion_flow, c.eval_ckpt)
         epoch = start_epoch + 1
-        gt_label_list, gt_mask_list, outputs_list, size_list = inference_meta_epoch(c, epoch, test_loader, extractor,
-                                                                                    parallel_flows, fusion_flow)
+        gt_label_list, gt_mask_list, outputs_list, size_list = inference_meta_epoch(c, epoch, test_loader, extractor,parallel_flows, fusion_flow)
 
         anomaly_score, anomaly_score_map_add, anomaly_score_map_mul = post_process(c, size_list, outputs_list)
-        best_det_auroc, best_loc_auroc, best_loc_pro = eval_det_loc(det_auroc_obs, loc_auroc_obs, loc_pro_obs, epoch,
-                                                                    gt_label_list, anomaly_score, gt_mask_list,
-                                                                    anomaly_score_map_add, anomaly_score_map_mul,
-                                                                    c.pro_eval)
-
+        best_det_auroc, best_loc_auroc, best_loc_pro = eval_det_loc(det_auroc_obs, loc_auroc_obs, loc_pro_obs, epoch, gt_label_list, anomaly_score, gt_mask_list, anomaly_score_map_add, anomaly_score_map_mul, c.pro_eval)
         return
 
     if c.resume:

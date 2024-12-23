@@ -11,7 +11,7 @@ from torch.cuda.amp import autocast, GradScaler
 
 from datasets import MVTecDataset, VisADataset, MIADDataset
 from models.extractors import build_extractor
-from models.flow_models import build_msflow_model
+from models.flow_models import build_msflow_model, build_trflow_model
 from post_process import post_process
 from utils import Score_Observer, t2np, positionalencoding2d, save_weights, load_weights
 from evaluations import eval_det_loc
@@ -169,7 +169,16 @@ def train(c):
     extractor, output_channels = build_extractor(c)
     extractor = extractor.to(c.device).eval()
     if 'mae' in c.extractor:
-        pass
+        trans_flows = build_trflow_model(c, output_channels)
+        trans_flows = trans_flows.to(c.device)
+        params = list(trans_flows.parameters())
+    elif 'deit' in c.extractor:
+        trans_flows = build_trflow_model(c, output_channels)
+        trans_flows = trans_flows.to(c.device)
+        params = list(trans_flows.parameters())
+        self.feature_extractor = timm.create_model(backbone_name, pretrained=True)
+        channels = [768]
+        scales = [16]
     else:
         parallel_flows, fusion_flow = build_msflow_model(c, output_channels)
         parallel_flows = [parallel_flow.to(c.device) for parallel_flow in parallel_flows]
@@ -194,11 +203,13 @@ def train(c):
     if c.mode == 'test':
         start_epoch = load_weights(parallel_flows, fusion_flow, c.eval_ckpt)
         epoch = start_epoch + 1
-        gt_label_list, gt_mask_list, outputs_list, size_list = inference_meta_epoch(c, epoch, test_loader, extractor, parallel_flows, fusion_flow)
-
+        gt_label_list, gt_mask_list, outputs_list, size_list = inference_meta_epoch(c, epoch, test_loader, extractor,
+                                                                                    parallel_flows, fusion_flow)
+                                                                                                       
         anomaly_score, anomaly_score_map_add, anomaly_score_map_mul = post_process(c, size_list, outputs_list)
-        best_det_auroc, best_loc_auroc, best_loc_pro = eval_det_loc(det_auroc_obs, loc_auroc_obs, loc_pro_obs, epoch, gt_label_list, anomaly_score, gt_mask_list, anomaly_score_map_add, anomaly_score_map_mul, c.pro_eval)
-        
+        best_det_auroc, best_loc_auroc, best_loc_pro = eval_det_loc(det_auroc_obs, loc_auroc_obs, loc_pro_obs, epoch,
+                                                                    gt_label_list, anomaly_score, gt_mask_list,
+                                                                    anomaly_score_map_add, anomaly_score_map_mul, c.pro_eval)
         return
     
     if c.resume:
@@ -213,7 +224,9 @@ def train(c):
         else:
             start_factor = 1.0
             end_factor = c.lr / optimizer.state_dict()['param_groups'][0]['lr']
-        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=start_factor, end_factor=end_factor, total_iters=(c.lr_warmup_epochs - start_epoch)*c.sub_epochs)
+        warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=start_factor,
+                                                             end_factor=end_factor,
+                                                             total_iters=(c.lr_warmup_epochs - start_epoch)*c.sub_epochs)
     else:
         warmup_scheduler = None
 
@@ -226,9 +239,11 @@ def train(c):
 
     for epoch in range(start_epoch, c.meta_epochs):
 
-        train_meta_epoch(c, epoch, train_loader, extractor, parallel_flows, fusion_flow, params, optimizer, warmup_scheduler, decay_scheduler, scaler if c.amp_enable else None)
+        train_meta_epoch(c, epoch, train_loader, extractor, parallel_flows, fusion_flow, params, optimizer,
+                         warmup_scheduler, decay_scheduler, scaler if c.amp_enable else None)
 
-        gt_label_list, gt_mask_list, outputs_list, size_list = inference_meta_epoch(c, epoch, test_loader, extractor, parallel_flows, fusion_flow)
+        gt_label_list, gt_mask_list, outputs_list, size_list = inference_meta_epoch(c, epoch, test_loader,
+                                                                                    extractor, parallel_flows, fusion_flow)
 
         anomaly_score, anomaly_score_map_add, anomaly_score_map_mul = post_process(c, size_list, outputs_list)
 
@@ -239,7 +254,8 @@ def train(c):
 
         det_auroc, loc_auroc, loc_pro_auc, \
             best_det_auroc, best_loc_auroc, best_loc_pro = \
-                eval_det_loc(det_auroc_obs, loc_auroc_obs, loc_pro_obs, epoch, gt_label_list, anomaly_score, gt_mask_list, anomaly_score_map_add, anomaly_score_map_mul, pro_eval)
+                eval_det_loc(det_auroc_obs, loc_auroc_obs, loc_pro_obs, epoch, gt_label_list, anomaly_score,
+                             gt_mask_list, anomaly_score_map_add, anomaly_score_map_mul, pro_eval)
 
         if c.wandb_enable:
             wandb_run.log(

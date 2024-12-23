@@ -91,3 +91,29 @@ def build_msflow_model_single_branch(c, c_feats):
     fusion_flow = Ff.GraphINN(nodes)
 
     return parallel_flows[0], fusion_flow
+
+
+def build_trflow_model(c, c_feats):
+    c_conds = c.c_conds
+    n_blocks = c.parallel_blocks
+    clamp_alpha = c.clamp_alpha
+    parallel_flows = []
+    for c_feat, c_cond, n_block in zip(c_feats, c_conds, n_blocks):
+        parallel_flows.append(
+            single_parallel_flows(c_feat, c_cond, n_block, clamp_alpha, subnet=subnet_conv_ln))
+
+    print("Build fusion flow with channels", c_feats)
+    nodes = list()
+    n_inputs = len(c_feats)
+    for idx, c_feat in enumerate(c_feats):
+        nodes.append(Ff.InputNode(c_feat, 1, 1, name='input{}'.format(idx)))
+    for idx in range(n_inputs):
+        nodes.append(Ff.Node(nodes[-n_inputs], Fm.PermuteRandom, {}, name='permute_{}'.format(idx)))
+    nodes.append(
+        Ff.Node([(nodes[-n_inputs + i], 0) for i in range(n_inputs)], FusionCouplingLayer, {'clamp': clamp_alpha},
+                name='fusion flow'))
+    for idx, c_feat in enumerate(c_feats):
+        nodes.append(Ff.OutputNode(eval('nodes[-idx-1].out{}'.format(idx)), name='output_{}'.format(idx)))
+    fusion_flow = Ff.GraphINN(nodes)
+
+    return parallel_flows, fusion_flow
