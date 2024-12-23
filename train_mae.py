@@ -268,3 +268,5 @@ def train_mae(c):
                 save_weights(epoch, parallel_flows, fusion_flow, 'best_loc_pro', c.ckpt_dir)
         else:
             continue
+
+        print()
